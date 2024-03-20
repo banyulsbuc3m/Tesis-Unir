@@ -1,0 +1,82 @@
+---
+title: "TesisEntrega1Borrador"
+author: "Bernard Banyuls"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+setwd("C:/Users/BERNARD_UC3M/Desktop/tesis unir/")
+
+
+library(readxl)
+X2023_Estad_EEU_MatriculadosEEU <- read_excel("2023_Estad_EEU-MatriculadosEEU.xlsx", col_names = FALSE)
+
+educ <- X2023_Estad_EEU_MatriculadosEEU
+col_names <- educ[4, ]
+col_namestoadd <- educ[3, ]
+educ <- educ[-(1:2),]
+library(dplyr)
+
+
+
+```
+
+
+```{r}
+
+for (i in 1:nrow(col_namestoadd)) {
+  for (j in 2:ncol(col_namestoadd)) {
+    if (is.na(col_namestoadd[i, j])) {
+      col_namestoadd[i, j] <- col_namestoadd[i, j - 1]
+    }
+  }
+}
+
+
+print(col_namestoadd)
+```
+
+```{r}
+col_namestoadd[is.na(col_namestoadd)] <- ""
+
+
+merged_cols <- data.frame(matrix(ncol = 20, nrow = 1))
+
+for (i in 1:20) {
+  if (col_namestoadd[[1, i]] == "") {
+    merged_cols[[1, i]] <- col_names[[1, i]]
+  } else {
+    if (col_names[[1, i]] != "") {
+      merged_cols[[1, i]] <- paste0(col_names[[1, i]], " ", col_namestoadd[[1, i]])
+    } else {
+      merged_cols[[1, i]] <- col_namestoadd[[1, i]]
+    }
+  }
+}
+
+# Print the merged result
+print(merged_cols)
+
+colnames(educ) <- merged_cols
+
+educ <- educ[-(1:2),]
+```
+
+```{r}
+educ[educ == "-"] <- NA
+```
+
+```{r}
+educ <- educ %>%
+  pivot_longer(cols = -c("Comunidad autónoma", "Universidad", "Rama", "Titulación"), 
+               names_to = c(".value", "Curso"),
+               names_pattern = "(\\D+) (\\d+-\\d+)",
+               values_to = c("Matriculados", "% Mujeres"))
+```
+
+```{r}
+library(writexl)
+write_xlsx(educ, "educ.xlsx")
+```
+
