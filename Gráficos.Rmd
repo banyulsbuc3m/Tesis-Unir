@@ -1,0 +1,267 @@
+Análisis Descriptivo de los Datos
+
+```{r}
+setwd("C:/Users/BERNARD_UC3M/Desktop/tesis unir/")
+
+
+library(readxl)
+educgrado <- read_excel("educgrado.xlsx")
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+```
+
+```{r}
+educgrado$Curso <- factor(educgrado$Curso, levels = unique(educgrado$Curso))
+
+ramagrado <- educgrado |> 
+  select(Rama, Curso, Matriculados) |> 
+  mutate(Matriculados = as.numeric(Matriculados)) |> 
+  group_by(Rama, Curso) |> 
+  summarise(Total = sum(Matriculados, na.rm = TRUE),  .groups = "drop")
+
+ramagrado$Curso <- factor(ramagrado$Curso, levels = c("2015-2016", "2016-2017", "2017-2018", "2018-2019", "2019-2020", "2020-2021", "2021-2022", "2022-2023"))
+
+library(scales)
+
+
+ggplot(ramagrado, aes(x = Curso, y = Total, color = Rama, group = Rama)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Nº Total de Matriculados por Rama y Curso",
+       x = "",
+       y = "Nº de Matriculados",
+       color = "") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(labels = comma, breaks = seq(0, max(ramagrado$Total), by = 100000))
+
+
+```
+
+
+```{r}
+
+ramagrado_percentage <- ramagrado %>%
+  group_by(Curso) %>%
+  mutate(Percentage = Total / sum(Total) * 100) 
+
+
+ggplot(ramagrado_percentage, aes(x = Curso, y = Percentage, fill = Rama)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(title = "Porcentaje de Matriculados por Rama y Curso",
+       x = "",
+       y = "Porcentaje de Matriculados",
+       fill = "") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(labels = function(x) paste0(x, "%"))
+```
+
+Si quisieramos agregar % exacto:
+  geom_text(aes(label = paste0(round(Percentage, 1), "%")), 
+            position = position_stack(vjust = 0.5), 
+             size = 3, color = "black") +
+             
+             
+             
+Ahora lo mismo por Comunidad
+
+
+```{r}
+educgrado$CA <- factor(educgrado$"Comunidad autónoma", levels = unique(educgrado$"Comunidad autónoma"))
+
+CCAAgrado <- educgrado |> 
+  select(CA, Curso, Matriculados) |> 
+  mutate(Matriculados = as.numeric(Matriculados)) |> 
+  group_by(CA, Curso) |> 
+  summarise(Total = sum(Matriculados, na.rm = TRUE),  .groups = "drop")
+
+
+
+ggplot(CCAAgrado, aes(x = Curso, y = Total, color = CA, group = CA)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Nº Total de Matriculados por C.A. y Curso",
+       x = "",
+       y = "Nº de Matriculados",
+       color = "") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(labels = comma, breaks = seq(0, max(CCAAgrado$Total), by = 50000))
+
+```
+
+```{r}
+library(plotly)
+
+plot <- plot_ly(CCAAgrado, x = ~Curso, y = ~Total, color = ~CA, type = 'scatter', mode = 'lines',
+                name = ~CA, line = list(shape = 'linear'), 
+                marker = list(size = 10)) %>%
+  layout(title = 'Nº Matriculados por Comunidad Autónoma',
+         xaxis = list(title = 'Curso', tickangle = 45),
+         yaxis = list(title = 'Nº Matriculados (miles (k))'))
+
+
+plot
+
+```
+
+```{r}
+
+library(ggrepel)
+
+CCAAgrado$Curso <- factor(CCAAgrado$Curso, levels = c("2015-2016", "2016-2017", "2017-2018", "2018-2019", "2019-2020", "2020-2021", "2021-2022", "2022-2023"))
+
+
+# Filter data for curso "2022-2023"
+CCAA_2022_2023grado <- subset(CCAAgrado, Curso == "2022-2023")
+
+
+ggplot(CCAAgrado, aes(x = Curso, y = Total, color = CA, group = CA)) +
+  geom_line() +
+  geom_point() +
+  geom_text_repel(data = CCAA_2022_2023grado, aes(label = CA), hjust = -2, vjust = 1, size = 3) +  
+  labs(title = "Nº Total de Matriculados por C.A. y Curso",
+       x = "",
+       y = "Nº de Matriculados",
+       color = "") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(labels = scales::comma, breaks = seq(0, max(CCAAgrado$Total), by = 50000)) +  theme(legend.position="none")
+```
+
+
+
+Máster Gráficos
+
+```{r}
+educmaster <- read_excel("educmaster.xlsx")
+
+
+```
+
+```{r}
+educmaster$Curso <- factor(educmaster$Curso, levels = unique(educmaster$Curso))
+
+ramamaster <- educmaster |> 
+  select(Rama, Curso, Matriculados) |> 
+  mutate(Matriculados = as.numeric(Matriculados)) |> 
+  group_by(Rama, Curso) |> 
+  summarise(Total = sum(Matriculados, na.rm = TRUE),  .groups = "drop")
+
+ramamaster$Curso <- factor(ramamaster$Curso, levels = c("2015-2016", "2016-2017", "2017-2018", "2018-2019", "2019-2020", "2020-2021", "2021-2022", "2022-2023"))
+
+library(scales)
+
+
+ggplot(ramamaster, aes(x = Curso, y = Total, color = Rama, group = Rama)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Nº Total de Matriculados por Rama y Curso",
+       x = "",
+       y = "Nº de Matriculados",
+       color = "") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(labels = comma, breaks = seq(0, max(ramagrado$Total), by = 100000))
+
+
+```
+
+
+```{r}
+
+ramamaster_percentage <- ramamaster %>%
+  group_by(Curso) %>%
+  mutate(Percentage = Total / sum(Total) * 100) 
+
+
+ggplot(ramamaster_percentage, aes(x = Curso, y = Percentage, fill = Rama)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(title = "Porcentaje de Matriculados por Rama y Curso",
+       x = "",
+       y = "Porcentaje de Matriculados",
+       fill = "") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(labels = function(x) paste0(x, "%"))
+```
+
+Si quisieramos agregar % exacto:
+  geom_text(aes(label = paste0(round(Percentage, 1), "%")), 
+            position = position_stack(vjust = 0.5), 
+             size = 3, color = "black") +
+             
+             
+             
+Ahora lo mismo por Comunidad
+
+
+```{r}
+educmaster$CA <- factor(educmaster$"Comunidad autónoma", levels = unique(educmaster$"Comunidad autónoma"))
+
+CCAAmaster <- educmaster |> 
+  select(CA, Curso, Matriculados) |> 
+  mutate(Matriculados = as.numeric(Matriculados)) |> 
+  group_by(CA, Curso) |> 
+  summarise(Total = sum(Matriculados, na.rm = TRUE),  .groups = "drop")
+
+
+
+ggplot(CCAAmaster, aes(x = Curso, y = Total, color = CA, group = CA)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Nº Total de Matriculados por C.A. y Curso",
+       x = "",
+       y = "Nº de Matriculados",
+       color = "") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(labels = comma, breaks = seq(0, max(CCAAmaster$Total), by = 50000))
+
+```
+
+```{r}
+library(plotly)
+
+plot <- plot_ly(CCAAmaster, x = ~Curso, y = ~Total, color = ~CA, type = 'scatter', mode = 'lines',
+                name = ~CA, line = list(shape = 'linear'), 
+                marker = list(size = 10)) %>%
+  layout(title = 'Nº Matriculados por Comunidad Autónoma',
+         xaxis = list(title = 'Curso', tickangle = 45),
+         yaxis = list(title = 'Nº Matriculados (miles (k))'))
+
+
+plot
+
+```
+
+```{r}
+
+library(ggrepel)
+
+CCAAmaster$Curso <- factor(CCAAmaster$Curso, levels = c("2015-2016", "2016-2017", "2017-2018", "2018-2019", "2019-2020", "2020-2021", "2021-2022", "2022-2023"))
+
+
+# Filter data for curso "2022-2023"
+CCAA_2022_2023master <- subset(CCAAmaster, Curso == "2022-2023")
+
+
+ggplot(CCAAmaster, aes(x = Curso, y = Total, color = CA, group = CA)) +
+  geom_line() +
+  geom_point() +
+  geom_text_repel(data = CCAA_2022_2023master, aes(label = CA), hjust = -2, vjust = 1, size = 3) +  
+  labs(title = "Nº Total de Matriculados por C.A. y Curso",
+       x = "",
+       y = "Nº de Matriculados",
+       color = "") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(labels = scales::comma, breaks = seq(0, max(CCAAmaster$Total), by = 50000)) +  theme(legend.position="none")
+```
+
+
