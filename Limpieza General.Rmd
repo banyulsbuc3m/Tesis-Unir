@@ -1,0 +1,210 @@
+Limpieza Archivo Datos Grado y Máster
+
+
+1) Librerías a cargar + directorio
+```{r}
+setwd("C:/Users/BERNARD_UC3M/Desktop/tesis unir/")
+library(tidyr)
+library(readxl)
+library(dplyr)
+library(writexl)
+```
+
+2) Limpieza Grado
+```{r}
+X2023_Estad_EEU_MatriculadosEEUgrado <- read_excel("2023_Estad_EEU-MatriculadosEEU.xlsx", col_names = FALSE) #sheet = 1 (default) no hace falta ponerlo
+
+educgrado <- X2023_Estad_EEU_MatriculadosEEUgrado #renombrar base de datos
+col_names <- educgrado[4, ] #crear variable que indica el nombre de columnas finales
+col_namestoadd <- educgrado[3, ] #crear variable que añadir a los nombres de las columnas
+
+#si nos fijamos en los datos originales filas 1 y 2 no son importantes/no sirven en R (Dan información que no debería ir en columnas). Los nombres de las columnas se encuentran en la línea 4 junto a la 3
+
+educgrado <- educgrado[-(1:2),]
+```
+
+Esta parte del código nos permite extraer de forma correcta la parte de la línea 3 que hay que añadir, si observamos no sale el año para las columnas de % mujeres (puesto que se entiende en los datos originales que es el mismo año que Matriculados), en este caso lo que se hace es añadir a la celda de la derecha vacía el valor del curso correspondiente.
+
+Ejemplo: 
+--  2022-2023 NA 2021-2022 NA;
+-- 2022- 2023 2022-203 2021-2022 2021-2022;
+
+Teniendo así tanto Matriculados y %Mujeres el año/curso al que pertenecen.
+```{r}
+
+for (i in 1:nrow(col_namestoadd)) {
+  for (j in 2:ncol(col_namestoadd)) {
+    if (is.na(col_namestoadd[i, j])) {
+      col_namestoadd[i, j] <- col_namestoadd[i, j - 1]
+    }
+  }
+}
+
+
+print(col_namestoadd) #print para comprobar
+```
+
+```{r}
+col_namestoadd[is.na(col_namestoadd)] <- "" #si es NA reemplazar con string vacio (no es NA pero no hay "nada")
+
+ 
+merged_cols <- data.frame(matrix(ncol = 20, nrow = 1)) #crear frame vacío para rellenar con los nombres
+
+
+#el siguiente for loop junta la columna col_names (línea 4 de datos originales) junto a col_namestoadd (línea 3 de los datos originales)
+
+for (i in 1:20) {
+  if (col_namestoadd[[1, i]] == "") {
+    merged_cols[[1, i]] <- col_names[[1, i]]
+  } else {
+    if (col_names[[1, i]] != "") {
+      merged_cols[[1, i]] <- paste0(col_names[[1, i]], " ", col_namestoadd[[1, i]])
+    } else {
+      merged_cols[[1, i]] <- col_namestoadd[[1, i]]
+    }
+  }
+}
+
+print(merged_cols) #print para comprobar
+
+colnames(educgrado) <- merged_cols #adjudicar los nombres creados al data frame
+
+educgrado <- educgrado[-(1:2),] #eliminar primeras filas que no las necesitamos ya puesto que ahora son los nombres de las columnas
+```
+
+```{r}
+educgrado[educgrado == "-"] <- NA #reemplazar - por "NA" (cambiar a 0 si es necesario)
+# educgrado[is.na(educgrado)] <- 0 
+```
+
+En caso de que lo queramos en formato ancho (una variable por columna en relación al curso lo guardamos en este apartado).
+
+```{r}
+
+educgradoancho <- educgrado
+
+# Eliminar "**" del nombre de las columnas
+names(educgradoancho) <- gsub("\\*\\*", "", names(educgradoancho))
+
+# Identificar columnas de la quinta a la última
+cols_to_convert <- names(educgradoancho)[5:ncol(educgradoancho)]
+
+# Convertir las columnas seleccionadas a numéricas
+educgradoancho[, cols_to_convert] <- sapply(educgradoancho[, cols_to_convert], as.numeric)
+
+
+write_xlsx(educgradoancho, "educgradoancho.xlsx")
+```
+
+
+El siguiente código cambia el formato del dataframe a:
+C.A, Universidad, Rama, Titulación, Curso, Matriculados, %Mujeres
+
+Está en formato largo, no realizar este código si se quiere que esté Matriculados2022-2023, %Mujeres 2022-2023 (resto de columnas así hasta completar todos los cursos).
+
+```{r}
+educgrado <- educgrado %>%
+  pivot_longer(cols = -c("Comunidad autónoma", "Universidad", "Rama", "Titulación"), 
+               names_to = c(".value", "Curso"),
+               names_pattern = "(\\D+) (\\d+-\\d+)",
+               values_to = c("Matriculados", "% Mujeres"))
+```
+
+Guardar archivo en formato xlsx
+
+```{r}
+write_xlsx(educgrado, "educgrado.xlsx")
+```
+
+
+Máster Limpieza
+
+Explicaciones similares a Grado puesto que ambos archivos tienen el mismo formato, la única diferencia es como se lee el archivo puesto que hay que indicar a que hoja del excel pertenece.
+
+```{r}
+
+X2023_Estad_EEU_MatriculadosEEUmaster <- read_excel("2023_Estad_EEU-MatriculadosEEU.xlsx", 
+    sheet = "Matriculados Master", col_names = FALSE)
+educmaster <- X2023_Estad_EEU_MatriculadosEEUmaster
+col_names <- educmaster[4, ]
+col_namestoadd <- educmaster[3, ]
+educmaster <- educmaster[-(1:2),]
+
+```
+
+
+```{r}
+
+for (i in 1:nrow(col_namestoadd)) {
+  for (j in 2:ncol(col_namestoadd)) {
+    if (is.na(col_namestoadd[i, j])) {
+      col_namestoadd[i, j] <- col_namestoadd[i, j - 1]
+    }
+  }
+}
+
+
+print(col_namestoadd)
+```
+
+```{r}
+col_namestoadd[is.na(col_namestoadd)] <- ""
+
+
+merged_cols <- data.frame(matrix(ncol = 20, nrow = 1))
+
+for (i in 1:20) {
+  if (col_namestoadd[[1, i]] == "") {
+    merged_cols[[1, i]] <- col_names[[1, i]]
+  } else {
+    if (col_names[[1, i]] != "") {
+      merged_cols[[1, i]] <- paste0(col_names[[1, i]], " ", col_namestoadd[[1, i]])
+    } else {
+      merged_cols[[1, i]] <- col_namestoadd[[1, i]]
+    }
+  }
+}
+
+
+print(merged_cols)
+
+colnames(educmaster) <- merged_cols
+
+educmaster <- educmaster[-(1:2),]
+```
+
+```{r}
+educmaster[educmaster == "-"] <- NA
+```
+
+Nuevamente previo a transformar los datos en formato largo, guardaremos los datos en formato ancho.
+
+```{r}
+
+educmasterancho <- educmaster
+
+# Eliminar "**" del nombre de las columnas
+names(educmasterancho) <- gsub("\\*\\*", "", names(educmasterancho))
+
+# Identificar columnas de la quinta a la última
+cols_to_convert <- names(educmasterancho)[5:ncol(educmasterancho)]
+
+# Convertir las columnas seleccionadas a numéricas
+educmasterancho[, cols_to_convert] <- sapply(educmasterancho[, cols_to_convert], as.numeric)
+
+
+write_xlsx(educmasterancho, "educmasterancho.xlsx")
+```
+
+```{r}
+educmaster <- educmaster %>%
+  pivot_longer(cols = -c("Comunidad autónoma", "Universidad", "Rama", "Titulación"), 
+               names_to = c(".value", "Curso"),
+               names_pattern = "(\\D+) (\\d+-\\d+)",
+               values_to = c("Matriculados", "% Mujeres"))
+```
+
+```{r}
+write_xlsx(educmaster, "educmaster.xlsx")  
+```
+

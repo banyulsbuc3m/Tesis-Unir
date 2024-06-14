@@ -1,0 +1,698 @@
+Análisis de Clústeres
+
+Para analizar clústeres teniendo en cuenta el formato de los datos se realizará de dos formas distintas, puesto que no todos los estudios (tanto grados como másteres) tienen la misma frontera temporal, es decir, algunos cursos no empezaron en el año 2015 y otros desaparecieron en el 2018, por ejemplo.
+
+Por lo tanto, las dos formas que se hará para comporar resultados es:
+
+1) Analizar cada año como variable independiente sin tener en cuenta el componente temporal. En este caso a los grados que no haya información en ciertos años los valores NA, se tendrán en cuenta como cero.
+
+2) En vez de tener en cuenta cada año como una variable, obtener el primer año de información de cada grado y el último año del que hay información para cada grado. El motivo es no tener en cuenta 2015 como año inicial ni tener el 2023 como año final, para así tener en cuenta el valor inicial y final personalmente de cada grado (y el crecimiento tanto en valor absoluto como en %).
+
+Previo a comenzar el análisis tanto para grado y máster de ambas metodologías, es necesario cargar los datos necesarios además de las librerios. Debido a que la limpieza y creación de los datos en este parte solamente se cargarán los csv obtenidos.
+
+```{r}
+setwd("C:/Users/BERNARD_UC3M/Desktop/tesis unir/")
+
+library(readxl)
+library(factoextra)
+library(dplyr)
+library(NbClust)
+library(tidyr)
+
+educgradoancho <- read_excel("educgradoancho.xlsx")
+educgrado <- read_excel("educgrado.xlsx")
+```
+
+Empezamos por la primera metodología en relación a los datos para Grados Universitarios.
+
+Preparación de datos de grado:
+
+Puesto que la mayor parte de la limpieza se ha realizado en la sección de limpieza el único paso a realizar en este caso sería reemplazar los valores NA por cero. Es importante en este caso escalar los datos para que los valores que tengan cero no tengan demasiado peso puesto que la forma en la que trabaja KMeans es por distancias.
+
+```{r}
+educgradoancho[is.na(educgradoancho)] <- 0
+```
+
+Por otra parte puesto que el algoritmo de KMeans trabaja con distancias solo permite variables numéricas por lo que hacemos una partición de los datos para tener solamente aquellas variables numéricas.
+
+```{r}
+educgradoanchonumeric <- educgradoancho[, sapply(educgradoancho,is.numeric)]
+```
+
+El siguiente paso es obtener el número óptimo de clústeres, hay diversas formas de analizar y obtener este número tanto como el "Elbow Method" y "Silhouette Method" aunque gracias a la libería NBClust podemos analizar tanto esas dos variables como muchas otras para analizar cuál es el número de clústeres óptimo más común entre las diversas metodologías.
+
+En principio sería usando: "NbClust(X min.nc = 2, max.nc = 10,  method = "kmeans")", pero debido a que muchas veces la librería da errores hemos decidido realizar solamente el método "wss" y "silhouette". Ambas metodologías en este caso indcian que cuatro es el número óptimo de clústeres.
+
+
+```{r}
+fviz_nbclust(scale(educgradoanchonumeric), kmeans, method = "wss") +
+    geom_vline(xintercept = 4, linetype = 2) +
+  labs(subtitle = "Elbow method")
+```
+
+```{r}
+fviz_nbclust(scale(educgradoanchonumeric), kmeans, method = "silhouette")+
+  labs(subtitle = "Silhouette method")
+```
+
+Una vez decidido el número óptimo lo siguiente es realizar el análisis.
+
+```{r}
+kmeangrado <- kmeans(scale(educgradoanchonumeric),4)
+
+print(kmeangrado)
+```
+
+Puesto que los datos han sido escalados para encontrar los cluster means habría que calcularlo manualmente en los datos no escalados con las nuevas etiquetas de clústeres.
+
+El tamaño de cada clúster son los siguientes respectivamente 140, 2123, 2, 2155. En este caso el clúster 3 tiene solamente dos titulaciones y corresponden a Derecho y Psicología de la UNED debido a la gran cantidad de Matriculados que tienen cada año.
+
+De la siguiente manera se nos muestra los centros, sin desescalar los datos.
+
+```{r}
+aggregate(educgradoanchonumeric, by=list(cluster=kmeangrado$cluster), mean)  
+```
+
+Para analizar los datos sin escalar los centroides con las etiquetas de clústeres obtenidos con los datos escalados lo primero que hay que hacer es añadir una nueva columna con estas etiquetas a los datos originales.
+
+```{r}
+educgradoanchocluster <- cbind(educgradoancho, cluster = kmeangrado$cluster)
+print(head(educgradoanchocluster))
+```
+
+```{r}
+educgradoanchoclusternumeric <- educgradoanchocluster |> 
+  mutate(across(starts_with("Matriculados"), as.numeric)) |> 
+  mutate(across(starts_with("% Mujeres"), as.numeric))
+
+educgradoanchoclusternumeric_promedio_cluster <- educgradoanchoclusternumeric |> 
+  group_by(cluster) %>%
+  summarise(across(starts_with("Matriculados"), mean, na.rm = TRUE),
+            across(starts_with("% Mujeres"), mean, na.rm = TRUE))
+
+print(head(educgradoanchoclusternumeric_promedio_cluster))
+```
+
+En este caso podríamos separar la información de Matriculados y % Mujeres para analizar la evolución de cada clúster a lo largo de los años.
+
+```{r}
+matriculados_long_educgradoanchomatriculados <- educgradoanchoclusternumeric_promedio_cluster %>%
+  pivot_longer(cols = starts_with("Matriculados"), names_to = "Año", values_to = "Matriculados")
+
+ggplot(matriculados_long_educgradoanchomatriculados  |>  filter(cluster != 3), 
+       aes(x = Año, y = Matriculados, color = factor(cluster), group = cluster)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Evolución de Matriculados por Cluster (Media) Grado", x = "", y = "Matriculados") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(labels = scales::comma, limits = c(0, 3000)) +
+  scale_x_discrete(labels = function(x) gsub("Matriculados ", "", x))
+```
+
+En este gráfico podemos observar la diferencia entre los grupos de clústeres. No se representa el clúster 3 debido a que contiene solamente dos titulaciones y los matriculados superan los 20000, valor muy alejado del resto de clústeres para no distorsionar el gráfico. Los tres clústeres han mantenido una tendencia similar el motivo principal sería que no aumentan las plazas por titulación en las universidades presenciales por lo que el promedio en total se mantiene similar a lo largo de los años.
+
+```{r}
+ggplot(matriculados_long_educgradoanchomatriculados  |>  filter(cluster == 3), 
+       aes(x = Año, y = Matriculados, color = factor(cluster), group = cluster)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Evolución de Matriculados por Cluster (Media) Grado", x = "", y = "Matriculados") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(labels = scales::comma, limits = c(20000, 35000)) +
+  scale_x_discrete(labels = function(x) gsub("Matriculados ", "", x))
+```
+
+Por otro lado como podemos observar para las titulaciones del clúster 3 (son solamente dos titulaciones) hubo un incremento en el número de matriculados probablemente por el Covid-19 y la modalidad online debido a la pandemia.
+
+
+```{r}
+matriculados_long_educgradoanchomujeres <- educgradoanchoclusternumeric_promedio_cluster %>%
+  pivot_longer(cols = starts_with("% Mujeres"), names_to = "Año", values_to = "Mujeres")
+
+ggplot(matriculados_long_educgradoanchomujeres, 
+       aes(x = Año, y = Mujeres, color = factor(cluster), group = cluster)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Evolución de % Mujeres por Cluster (Media) Grado", x = "", y = "% Mujeres") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  +
+  scale_x_discrete(labels = function(x) gsub("% Mujeres ", "", x))
+```
+
+Lo que podemos observar en este caso es que el clúster 1 y 3 siguen una tendencia similar, el clúster 2 tiene un aumento del porcentaje pero lo que más destaca en este gráfico son las titulaciones del clúster 4 que hubo un aumento relativamente considerable por lo que sería interesante analizar por rama cada clúster.
+
+```{r}
+
+titulaciones_por_rama_clusteranchoeducgrado <- educgradoanchocluster %>%
+  count(Rama, cluster)
+
+ggplot(titulaciones_por_rama_clusteranchoeducgrado, aes(x = Rama, y = n, fill = factor(cluster))) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  labs(title = "Cantidad de Titulaciones en cada Rama por Cluster Grado", x = "", y = "Cantidad de Titulaciones", fill = "Cluster") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+En este gráfico podemos observar la distribución de cuantas titulaciones hay dependiendo de la rama por clúster. En este caso  el clúster 4 se centra en la rama de ciencias sociales y jurídicas e ingeniería y arquitectura.
+
+Puesto que estamos teniendo en cuenta todas las variables podemos realizar un simple Principal Component Analysis para visualizar los datos en dos dimensiones (es decir, crear dos variables que contentan la máxima información posible de todos los datos disponibles).
+
+```{r}
+
+fviz_cluster(kmeangrado, data = scale(educgradoanchonumeric),
+             palette = c("lightblue", "orange", "pink", "red"),
+             geom = "point",
+             ellipse.type = "convex", 
+             ggtheme = theme_bw()
+             )
+```
+
+Como podemos observar visualmente hay diferencias, en los diversos clústeres. Para empezar el cluster 2, está formado solamente por dos titulaciónes por lo que es importante analizar a fondo cuáles son. Por otra parte, los otros tres clústeres están diferenciados. Puesto que distorsionan el análisis tal vez sería interesante eliminarlos de los datos para que sus valores no afecten al algoritmo debido a que trabaja en distancias.
+
+La siguiente parte se centrará en tener en cuenta el primer valor de cada titulación y el más reciente para analizar ambos valores además de su crecimiento tanto en términos porcentuales como absolutos.
+
+Vamos a volver a trabajar con la base de datos que ya tenemos creada educgradoancho. Debido a que queremos tener en cuenta el primer valor de cierto año y el último que tenemos información la forma en la que lo haremos será primero ordenando las variables y luego que obtenga el primer valor distinto a cero y el último valor en los datos distinto a cero como el valor final.
+
+```{r}
+
+matriculados_cols <- grep("^Matriculados", names(educgradoanchonumeric), value = TRUE)
+mujeres_cols <- grep("^% Mujeres", names(educgradoanchonumeric), value = TRUE)
+
+
+sorted_cols <- c(sort(matriculados_cols), sort(mujeres_cols))
+
+
+educgradonumericordered <- educgradoanchonumeric[, sorted_cols]
+```
+
+
+```{r}
+
+get_initial_value_matriculados <- function(x) {
+  initial_index <- which(x != 0)[1]
+  if (is.na(initial_index)) {
+    return(NA)  
+  } else {
+    return(x[initial_index]) 
+  }
+}
+
+
+get_initial_value_mujeres <- function(x) {
+  initial_index <- which(x != 0)[1]  
+  if (is.na(initial_index)) {
+    return(NA)
+  } else {
+    return(x[initial_index])  
+  }
+}
+
+
+get_final_value_matriculados <- function(x) {
+  final_index <- max(which(x != 0))  
+  if (is.na(final_index)) {
+    return(NA)  
+  } else {
+    return(x[final_index])  
+  }
+}
+
+
+get_final_value_mujeres <- function(x) {
+  final_index <- max(which(x != 0))  
+  if (is.na(final_index)) {
+    return(NA)  
+  } else {
+    return(x[final_index]) 
+  }
+}
+
+
+initial_values_matriculados <- apply(educgradonumericordered[grep("Matriculados", colnames(educgradonumericordered))], 1, get_initial_value_matriculados)
+initial_values_mujeres <- apply(educgradonumericordered[grep("% Mujeres", colnames(educgradonumericordered))], 1, get_initial_value_mujeres)
+final_values_matriculados <- apply(educgradonumericordered[grep("Matriculados", colnames(educgradonumericordered))], 1, get_final_value_matriculados)
+final_values_mujeres <- apply(educgradonumericordered[grep("% Mujeres", colnames(educgradonumericordered))], 1, get_final_value_mujeres)
+
+
+result <- data.frame(
+  Initial_Value_Matriculados = initial_values_matriculados,
+  Initial_Value_Mujeres = initial_values_mujeres,
+  Final_Value_Matriculados = final_values_matriculados,
+  Final_Value_Mujeres = final_values_mujeres
+)
+
+
+```
+
+El siguiente paso es agregar esta nueva tabla a los datos originales. Aunque también podemos seguir trabajando desde esta tabla y luego agregar los valores de las etiquetas a los datos originales.
+
+```{r}
+
+educgradovalores <- cbind(educgradoancho, result)
+```
+
+El siguiente paso además de tener los valores iniciales y finales tanto para sería calcular la diferencia tanto en valor absoluto como porcentual de Matriculados para obtener el crecimiento, y para en el caso del % Mujeres debido a su nomenclatura solamente la diferencia.
+
+```{r}
+resultgrado <- result |> 
+  mutate(crec_abs_matriculados = Final_Value_Matriculados - Initial_Value_Matriculados,
+         crec_pcg_matriculados = (Final_Value_Matriculados - Initial_Value_Matriculados) / Initial_Value_Matriculados,
+         crec_mujeres = Final_Value_Mujeres - Initial_Value_Mujeres)
+```
+
+Previo a realizar el análisis de clústeres, hay algunos casos en los que en nuestros datos hay valores NAs (aunque los hayamos tratado previamente al calcular el Valor Inicial y Final, debido a que en algunas titulaciones hay menos de 5 matriculados y todos hombres por lo que el algortimo realizado antes para obtener valor inicial y final los cuenta como NA), por lo tanto directamente reemplazaremos NA con cero.
+
+
+```{r}
+rows_with_NAs <- resultgrado[!complete.cases(resultgrado), ]
+print(rows_with_NAs)
+```
+
+El código de arriba nos permite ver que líneas (titulaciones) tienen valores NAs, por lo que teniendo en cuenta estos índices volviendo a los datos originales comprobar lo mencionado arriba.
+
+```{r}
+resultgrado[is.na(resultgrado)] <- 0
+```
+ 
+Puesto que ya tenemos los datos el siguiente paso es realizar el mismo análisis de KMeans, tanto selección de número óptimo de Clústeres como analizar los centroides.
+
+```{r}
+fviz_nbclust(scale(resultgrado), kmeans, method = "wss") +
+    geom_vline(xintercept = 3, linetype = 2) +
+  labs(subtitle = "Elbow method")
+```
+
+```{r}
+fviz_nbclust(scale(resultgrado), kmeans, method = "silhouette")+
+  labs(subtitle = "Silhouette method")
+```
+
+Una vez decidido el número óptimo (3) lo siguiente es realizar el análisis.
+
+```{r}
+kmeangradocrec <- kmeans(scale(resultgrado),3)
+
+print(kmeangradocrec)
+```
+En este caso tenemos tres clústeres con tamaños similares son los siguientes respectivamente: 1544, 1123, 1753
+
+Puesto que los datos han sido escalados para encontrar los cluster means habría que calcularlo manualmente en los datos no escalados con las nuevas etiquetas de clústeres.
+
+De la siguiente manera se nos muestra los centros, sin desescalar los datos.
+
+```{r}
+aggregate(resultgrado, by=list(cluster=kmeangradocrec$cluster), mean)  
+```
+
+Para analizar los datos sin escalar los centroides con las etiquetas de clústeres obtenidos con los datos escalados lo primero que hay que hacer es añadir una nueva columna con estas etiquetas a los datos originales.
+
+```{r}
+educgradovalorescluster <- cbind(educgradovalores, cluster = kmeangradocrec$cluster)
+print(head(educgradovalorescluster))
+```
+
+Aquí vamos a volver a realizar los mismos gráficos y análisis que hicimos previamente.
+
+
+```{r}
+educgradovaloresclusternumeric_promedio_cluster <- educgradovalorescluster |> 
+  group_by(cluster) |> 
+  summarise(
+    mean_initial_matriculados = mean(Initial_Value_Matriculados, na.rm = TRUE),
+    mean_final_matriculados = mean(Final_Value_Matriculados, na.rm = TRUE),
+    mean_initial_mujeres = mean(Initial_Value_Mujeres, na.rm = TRUE),
+    mean_final_mujeres = mean(Final_Value_Mujeres, na.rm = TRUE)
+  )
+
+print(head(educgradovaloresclusternumeric_promedio_cluster))
+```
+En este caso podemos observar que aquellas titulaciones de grado  pertenecientes al clúster 3 tienen valores superiores tanto en el promedio de matriculados como el % de mujeres habiendo un incremento en ambos casos.
+
+Por otro lado, la principal diferencia entre el clúster 1 y 2 se centra en la diferencia en cuanto al % de Mujeres en las titulaciones de grado por lo que sería interesante analizar a que ramas pertenecen las diversas titulaciones de cada clúster.
+
+```{r}
+titulaciones_por_rama_clustervaloresgrado <- educgradovalorescluster |> 
+  count(Rama, cluster)
+
+ggplot(titulaciones_por_rama_clustervaloresgrado, aes(x = Rama, y = n, fill = factor(cluster))) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  labs(title = "Cantidad de Titulaciones en cada Rama por Cluster Grado", x = "", y = "Cantidad de Titulaciones", fill = "Cluster") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Como podemos observar para el clúster 1 se encuentran principalmente aquellas titulaciones pertenecientes a la Rama de Ingeniería y Arquitectura.
+
+
+Puesto que estamos teniendo en cuenta todas las variables podemos realizar un simple Principal Component Analysis para visualizar los datos en dos dimensiones (es decir, crear dos variables que contentan la máxima información posible de todos los datos disponibles).
+
+```{r}
+
+fviz_cluster(kmeangradocrec, data = scale(resultgrado),
+             palette = c("lightblue", "orange", "pink"),
+             geom = "point",
+             ellipse.type = "convex", 
+             ggtheme = theme_bw()
+             )
+```
+
+El siguiente apartado tratará de replicar el mismo análisis para los másteres.
+
+
+```{r}
+educmasterancho <- read_excel("educmasterancho.xlsx")
+```
+
+Preparación de datos de máster:
+
+Puesto que la mayor parte de la limpieza se ha realizado en la sección de limpieza el único paso a realizar en este caso sería reemplazar los valores NA por cero. Es importante en este caso escalar los datos para que los valores que tengan cero no tengan demasiado peso puesto que la forma en la que trabaja KMeans es por distancias.
+
+```{r}
+educmasterancho[is.na(educmasterancho)] <- 0
+```
+
+Por otra parte puesto que el algoritmo de KMeans trabaja con distancias solo permite variables numéricas por lo que hacemos una partición de los datos para tener solamente aquellas variables numéricas.
+
+```{r}
+educmasteranchonumeric <- educmasterancho[, sapply(educmasterancho,is.numeric)]
+```
+
+El siguiente paso es obtener el número óptimo de clústeres, hay diversas formas de analizar y obtener este número tanto como el "Elbow Method" y "Silhouette Method" aunque gracias a la libería NBClust podemos analizar tanto esas dos variables como muchas otras para analizar cuál es el número de clústeres óptimo más común entre las diversas metodologías.
+
+En principio sería usando: "NbClust(X min.nc = 2, max.nc = 10,  method = "kmeans")", pero debido a que muchas veces la librería da errores hemos decidido realizar solamente el método "wss" y "silhouette". Ambas metodologías en este caso indcian que cuatro es el número óptimo de clústeres.
+
+
+```{r}
+fviz_nbclust(scale(educmasteranchonumeric), kmeans, method = "wss") +
+    geom_vline(xintercept = 3, linetype = 2) +
+  labs(subtitle = "Elbow method")
+```
+
+```{r}
+fviz_nbclust(scale(educmasteranchonumeric), kmeans, method = "silhouette")+
+  labs(subtitle = "Silhouette method")
+```
+
+En este caso las metodologías difieren por lo que haremos primero tres clústeres en caso de que uno de los grupos tenga muy pocos integrantes realizaremos dos. (Sale un grupo de 83 por lo que finalmente haremos solamente dos)
+
+Una vez decidido el número óptimo lo siguiente es realizar el análisis.
+
+```{r}
+kmeanmaster <- kmeans(scale(educmasteranchonumeric),2)
+
+print(kmeanmaster)
+```
+
+Podemos observar dos clústeres con tamaños de 2488, 3056 respectivamente.
+
+Puesto que los datos han sido escalados para encontrar los cluster means habría que calcularlo manualmente en los datos no escalados con las nuevas etiquetas de clústeres.
+
+De la siguiente manera se nos muestra los centros, sin desescalar los datos.
+
+```{r}
+aggregate(scale(educmasteranchonumeric), by=list(cluster=kmeanmaster$cluster), mean)  
+```
+
+Para analizar los datos sin escalar los centroides con las etiquetas de clústeres obtenidos con los datos escalados lo primero que hay que hacer es añadir una nueva columna con estas etiquetas a los datos originales. O usar la función aggregate sin scale.
+
+```{r}
+educmasteranchocluster <- cbind(educmasterancho, cluster = kmeanmaster$cluster)
+print(head(educmasteranchocluster))
+```
+
+
+
+```{r}
+educmasteranchoclusternumeric <- educmasteranchocluster |> 
+  mutate(across(starts_with("Matriculados"), as.numeric)) |> 
+  mutate(across(starts_with("% Mujeres"), as.numeric))
+
+educmasteranchoclusternumeric_promedio_cluster <- educmasteranchoclusternumeric |> 
+  group_by(cluster) %>%
+  summarise(across(starts_with("Matriculados"), mean, na.rm = TRUE),
+            across(starts_with("% Mujeres"), mean, na.rm = TRUE))
+
+print(head(educmasteranchoclusternumeric_promedio_cluster))
+```
+
+En este caso podríamos separar la información de Matriculados y % Mujeres para analizar la evolución de cada clúster a lo largo de los años.
+
+```{r}
+matriculados_long_educmasteranchomatriculados <- educmasteranchoclusternumeric_promedio_cluster %>%
+  pivot_longer(cols = starts_with("Matriculados"), names_to = "Año", values_to = "Matriculados")
+
+ggplot(matriculados_long_educmasteranchomatriculados, 
+       aes(x = Año, y = Matriculados, color = factor(cluster), group = cluster)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Evolución de Matriculados por Cluster (Media) Master", x = "", y = "Matriculados") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_x_discrete(labels = function(x) gsub("Matriculados ", "", x))
+```
+
+En este gráfico podemos observar  que ambos han tenido un aumento en cuanto al promedio de matriculados aunque el incremento más considerable se puede observar en aquellas titulaciones de máster pertenecientes al clúster 1.
+
+```{r}
+matriculados_long_educmasteranchomujeres <- educmasteranchoclusternumeric_promedio_cluster %>%
+  pivot_longer(cols = starts_with("% Mujeres"), names_to = "Año", values_to = "Mujeres")
+
+ggplot(matriculados_long_educmasteranchomujeres, 
+       aes(x = Año, y = Mujeres, color = factor(cluster), group = cluster)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Evolución de % Mujeres por Cluster (Media) Master", x = "", y = "% Mujeres") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  +
+  scale_x_discrete(labels = function(x) gsub("% Mujeres ", "", x))
+```
+
+En este caso para las titulaciones de máster pertenecientes al clúster 2 podemos ver como el % de Mujeres bajó en del curso 2015-2016 aunque después de la pandemía aumento el valor inicial. En cambio para las titulaciones de máster pertenecientes al clúster 1 tienden a tener más de la mitad de los matriculados del género femenino, incluso hubo un incremento de este valor a lo largo de los años.
+
+Por lo que sería interesante analizar a que ramas pertenecen las titulaciones dependiendo del clúster del que forman parte.
+
+```{r}
+
+titulaciones_por_rama_clusteranchoeducmaster <- educmasteranchocluster %>%
+  count(Rama, cluster)
+
+
+ggplot(titulaciones_por_rama_clusteranchoeducmaster, aes(x = Rama, y = n, fill = factor(cluster))) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  labs(title = "Cantidad de Titulaciones en cada Rama por Cluster Máster", x = "", y = "Cantidad de Titulaciones", fill = "Cluster") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+En este gráfico podemos observar la distribución de cuantas titulaciones hay dependiendo de la rama por clúster. En este caso  el clúster 2 se centra en la rama de ciencias sociales y jurídicas e ingeniería y arquitectura por lo que debido a la cantidad de matriculados y el % Mujeres tiene sentido debido a que titulaciones pertenecientes a este tipo de ramas tienden a tener pocas plazas además de que actualmente no hay un gran porcentaje de mujeres en la rama de ingeniería aunque con el paso del tiempo esto está cambiando como se puede observar en el crecimiento de la variable % Mujeres, indicando que cada vez más mujeres están estudiando titulaciones de esta rama.
+
+Por lo tanto en cuanto a titulaciones de máster hay dos tipos de titulaciones, aquellas con un % de Mujeres relativamente equitativo al de hombres, y con más plazas por tanto más matriculados.
+
+
+Puesto que estamos teniendo en cuenta todas las variables podemos realizar un simple Principal Component Analysis para visualizar los datos en dos dimensiones (es decir, crear dos variables que contentan la máxima información posible de todos los datos disponibles).
+
+```{r}
+
+fviz_cluster(kmeanmaster, data = scale(educmasteranchonumeric),
+             palette = c("lightblue", "orange"),
+             geom = "point",
+             ellipse.type = "convex", 
+             ggtheme = theme_bw()
+             )
+```
+
+
+La siguiente parte se centrará en tener en cuenta el primer valor de cada titulación y el más reciente para analizar ambos valores además de su crecimiento tanto en términos porcentuales como absolutos.
+
+Vamos a volver a trabajar con la base de datos que ya tenemos creada educmasterancho. Debido a que queremos tener en cuenta el primer valor de cierto año y el último que tenemos información la forma en la que lo haremos será primero ordenando las variables y luego que obtenga el primer valor distinto a cero y el último valor en los datos distinto a cero como el valor final.
+
+```{r}
+
+matriculados_cols <- grep("^Matriculados", names(educmasteranchonumeric), value = TRUE)
+mujeres_cols <- grep("^% Mujeres", names(educmasteranchonumeric), value = TRUE)
+
+
+sorted_cols <- c(sort(matriculados_cols), sort(mujeres_cols))
+
+
+educmasternumericordered <- educmasteranchonumeric[, sorted_cols]
+```
+
+
+```{r}
+
+get_initial_value_matriculados <- function(x) {
+  initial_index <- which(x != 0)[1]
+  if (is.na(initial_index)) {
+    return(NA)  
+  } else {
+    return(x[initial_index]) 
+  }
+}
+
+
+get_initial_value_mujeres <- function(x) {
+  initial_index <- which(x != 0)[1]  
+  if (is.na(initial_index)) {
+    return(NA)
+  } else {
+    return(x[initial_index])  
+  }
+}
+
+
+get_final_value_matriculados <- function(x) {
+  final_index <- max(which(x != 0))  
+  if (is.na(final_index)) {
+    return(NA)  
+  } else {
+    return(x[final_index])  
+  }
+}
+
+
+get_final_value_mujeres <- function(x) {
+  final_index <- max(which(x != 0))  
+  if (is.na(final_index)) {
+    return(NA)  
+  } else {
+    return(x[final_index]) 
+  }
+}
+
+
+initial_values_matriculados <- apply(educmasternumericordered[grep("Matriculados", colnames(educmasternumericordered))], 1, get_initial_value_matriculados)
+initial_values_mujeres <- apply(educmasternumericordered[grep("% Mujeres", colnames(educmasternumericordered))], 1, get_initial_value_mujeres)
+final_values_matriculados <- apply(educmasternumericordered[grep("Matriculados", colnames(educmasternumericordered))], 1, get_final_value_matriculados)
+final_values_mujeres <- apply(educmasternumericordered[grep("% Mujeres", colnames(educmasternumericordered))], 1, get_final_value_mujeres)
+
+
+resultmaster <- data.frame(
+  Initial_Value_Matriculados = initial_values_matriculados,
+  Initial_Value_Mujeres = initial_values_mujeres,
+  Final_Value_Matriculados = final_values_matriculados,
+  Final_Value_Mujeres = final_values_mujeres
+)
+
+
+```
+
+El siguiente paso es agregar esta nueva tabla a los datos originales. Aunque también podemos seguir trabajando desde esta tabla y luego agregar los valores de las etiquetas a los datos originales.
+
+```{r}
+
+educmastervalores <- cbind(educmasterancho, resultmaster)
+```
+
+El siguiente paso además de tener los valores iniciales y finales tanto para sería calcular la diferencia tanto en valor absoluto como porcentual de Matriculados para obtener el crecimiento, y para en el caso del % Mujeres debido a su nomenclatura solamente la diferencia.
+
+```{r}
+resultmaster <- resultmaster |> 
+  mutate(crec_abs_matriculados = Final_Value_Matriculados - Initial_Value_Matriculados,
+         crec_pcg_matriculados = (Final_Value_Matriculados - Initial_Value_Matriculados) / Initial_Value_Matriculados,
+         crec_mujeres = Final_Value_Mujeres - Initial_Value_Mujeres)
+```
+
+Previo a realizar el análisis de clústeres, hay algunos casos en los que en nuestros datos hay valores NAs (aunque los hayamos tratado previamente al calcular el Valor Inicial y Final, debido a que en algunas titulaciones hay menos de 5 matriculados y todos hombres por lo que el algortimo realizado antes para obtener valor inicial y final los cuenta como NA), por lo tanto directamente reemplazaremos NA con cero.
+
+
+```{r}
+rows_with_NAs <- resultgrado[!complete.cases(resultmaster), ]
+print(rows_with_NAs)
+```
+
+El código de arriba nos permite ver que líneas (titulaciones) tienen valores NAs, por lo que teniendo en cuenta estos índices volviendo a los datos originales comprobar lo mencionado arriba.
+
+```{r}
+resultmaster[is.na(resultmaster)] <- 0
+```
+ 
+Puesto que ya tenemos los datos el siguiente paso es realizar el mismo análisis de KMeans, tanto selección de número óptimo de Clústeres como analizar los centroides.
+
+```{r}
+fviz_nbclust(scale(resultmaster), kmeans, method = "wss") +
+    geom_vline(xintercept = 3, linetype = 2) +
+  labs(subtitle = "Elbow method")
+```
+
+```{r}
+fviz_nbclust(scale(resultmaster), kmeans, method = "silhouette")+
+  labs(subtitle = "Silhouette method")
+```
+
+Una vez decidido el número óptimo (3) lo siguiente es realizar el análisis. (Pasa lo mismo que antes, que sale 3 en uno y dos en otro.) En este caso puesto que el tercer grupo es de 1025 vamos en principio a tener en cuenta tres grupos.
+
+```{r}
+kmeanmastercrec <- kmeans(scale(resultmaster),3)
+
+print(kmeanmastercrec)
+```
+En este caso obtenemos tres clústeres de tamaño 2452, 2067, 1025 respectivamente.
+
+Puesto que los datos han sido escalados para encontrar los cluster means habría que calcularlo manualmente en los datos no escalados con las nuevas etiquetas de clústeres.
+
+De la siguiente manera se nos muestra los centros, sin desescalar los datos.
+
+```{r}
+aggregate(scale(resultmaster), by=list(cluster=kmeanmastercrec$cluster), mean)  
+```
+
+Para analizar los datos sin escalar los centroides con las etiquetas de clústeres obtenidos con los datos escalados lo primero que hay que hacer es añadir una nueva columna con estas etiquetas a los datos originales.
+
+```{r}
+educmastervalorescluster <- cbind(educmastervalores, cluster = kmeanmastercrec$cluster)
+print(head(educmastervalorescluster))
+```
+
+
+
+```{r}
+educmastervaloresclusternumeric_promedio_cluster <- educmastervalorescluster |> 
+  group_by(cluster) |> 
+  summarise(
+    mean_initial_matriculados = mean(Initial_Value_Matriculados, na.rm = TRUE),
+    mean_final_matriculados = mean(Final_Value_Matriculados, na.rm = TRUE),
+    mean_initial_mujeres = mean(Initial_Value_Mujeres, na.rm = TRUE),
+    mean_final_mujeres = mean(Final_Value_Mujeres, na.rm = TRUE)
+  )
+
+print(head(educmastervaloresclusternumeric_promedio_cluster))
+```
+
+En este caso los tres clústeres tienen características bastante diferenciables. En el caso del clúster 1, encontramos un aumento en cuanto al valor inicial de matriculados de las titulaciones de máster con respecto al final pasando de un promedio de 55 matriculados por titulación en este clúster a un promedio de 79 matriculados. En cambio en relación al % de Mujeres este valor ha bajado con el paso de los años.
+
+Por otra parte el clúster 2 ha experimentado un crecimiento muy pequeño pasando de un promedio de 32 a 35, pero en cuanto al % de Mujeres este valor ha decrecido del 32% de mujeres por titulación de promedio a 31% un cambio casi nulo.
+
+En cuanto al clúster 3 lo sorprendente es una caida considerable en cuanto al número de Matriculados pasando de un promeido de 27 matriculados por titulación a 20 matriculados, pero lo sorprendente es el aumento en cuanto al número de Mujeres matriculadas pasando de un 50% a un 75% aunque esto puede ser debido a la caída de matriculados en caso de que hayan sido hombres que hayan dejado de estudiar este tipo de titulaciones por lo que es interesante anaízar a que rama pertenecen las diversas titulaciones de cada clúster.
+
+```{r}
+titulaciones_por_rama_clustervaloresmaster <- educmastervalorescluster %>%
+  count(Rama, cluster)
+
+ggplot(titulaciones_por_rama_clustervaloresmaster, aes(x = Rama, y = n, fill = factor(cluster))) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  labs(title = "Cantidad de Titulaciones en cada Rama por Cluster Máster", x = "", y = "Cantidad de Titulaciones", fill = "Cluster") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Como podemos observar para el clúster 1 principalmente encontramos aquellas titulaciones centradas en ciencias sociales y jurídicas y ciencias de la salud. Por otra parte para el clúster 2 encontramos principalmente titulaciones pertenecientes a la rama de Ingeniería y Arquitectura indicando por esa parte el motivo del % de Mujeres tan bajo que hay en estas titulaciones. Finalmente, para el clúster 3 podemos observar titulaciones que están principalmente en Ciencias Sociales y Jurídicas, tal vez el motivo por el cuál aumentó el % de Mujeres en este clúster es debido a la reciente popularidad que están teniendo las titulaciones de Ingeniería como podemos observar hay el doble de másteres en el clúster 2 que en el 3 como vimos anteriormente.
+
+El clúster 1 y 3 son muy similare sen cuanto a como se comportan pero la principal diferencia es la cantidad de matriculados en promedio en las titulaciones de un clúster a otro por lo que pueden haber pasado dos cosas, que los hombres que antes estaban en titulaciones del clúster 3 ahora estudien ingeniería o que los estudiantes de máster apliquen a aquellos másteres con una cantidad de plazas superior a los del clúster 3 puesto que muchas titulaciones tienen solamente hasta 25 plazas por lo que son más competitivas y másteres con más plazas son mas llamativos actualmente para los estudiantes debido a que al haber más plazas es menos competitivo además de que tal vez sean de modalidad online o que no sean a tiempo completo facilitando el trabajar y estudiar a la vez.
+
+
+Puesto que estamos teniendo en cuenta todas las variables podemos realizar un simple Principal Component Analysis para visualizar los datos en dos dimensiones (es decir, crear dos variables que contentan la máxima información posible de todos los datos disponibles).
+
+```{r}
+
+fviz_cluster(kmeanmastercrec, data = scale(resultmaster),
+             palette = c("lightblue", "orange", "pink"),
+             geom = "point",
+             ellipse.type = "convex", 
+             ggtheme = theme_bw() 
+             )
+```
+
+
